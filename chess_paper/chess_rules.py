@@ -7,20 +7,24 @@ import chess
 import hashlib
 from dataclasses import dataclass as dc
 
+class InvalidFEN(Exception): pass
+class InvalidMove(Exception): pass
+
 # Filtering out the moves that cause too much complexity
 @dc(frozen=True)
 class RulesConfig:
    allow_castling: bool = False
    allow_en_passant: bool = False
-   allow_promotions: bool = True # False : only promote to a queen
+   allow_promotions: bool = True
    allow_underpromotions: bool = True
+   reject_terminated_positions: bool = False
 
 def explain_cfg(cfg: RulesConfig):
    return {
       "allow_castling": cfg.allow_castling,
       "allow_en_passant": cfg.allow_en_passant,
       "allow_promotions": cfg.allow_promotions,
-      "allow_underpromotion": cfg.allow_underpromotion,
+      "allow_underpromotions": cfg.allow_underpromotions,
       "reject_terminated_positions": cfg.reject_terminated_positions,
    }
 
@@ -40,7 +44,7 @@ def filter_moves(board, moves, cfg: RulesConfig):
       if not cfg.allow_en_passant and board.is_en_passant(m): continue
       if m.promotion is not None:
          if not cfg.allow_promotions: continue
-         if not cfg.allow_underpromotion and is_underpromotion(m): continue
+         if not cfg.allow_underpromotions and is_underpromotion(m): continue
       out.append(m)
    return out
 
@@ -53,7 +57,9 @@ def normalize_fen(fen: str) -> str: return board_from_fen(fen).fen()
 
 def legal_moves(fen: str, cfg: RulesConfig = RulesConfig()):
    b = board_from_fen(fen)
-   if cfg.reject_terminated_positions and (b.is_checkmate() or b.is_stalemate()): return []
+   if cfg.reject_terminated_positions and (
+      b.is_checkmate() or b.is_stalemate() or b.is_insufficient_material()
+   ): return []
    return sorted(uci(m) for m in filter_moves(b, b.legal_moves, cfg))
 
 def legal_moves_set(fen: str, cfg: RulesConfig = RulesConfig()): return set(legal_moves(fen, cfg))
@@ -80,5 +86,3 @@ def is_terminal(fen: str) -> bool:
 # Keying
 def state_key(fen: str):return hashlib.sha256(normalize_fen(fen).encode("utf-8")).hexdigest()
 def node_id(fen, ply) -> str: return hashlib.sha256(f"{normalize_fen(fen)}\nply={ply}".encode("utf-8")).hexdigest()
-
-
